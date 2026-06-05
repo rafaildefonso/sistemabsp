@@ -9,7 +9,7 @@
 
   CHANGELOG:
 
-  v7.5 — 01/06/2026
+  v8.0 — 01/06/2026
     + Autenticação email+senha com SHA-256 (aba _Usuarios).
     + Sessão persistente 24h (localStorage).
     + LoginScreen: modo real pede credenciais; modo demo mantém nome+cargo.
@@ -98,7 +98,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SistemaBSP — Sports Analytics Platform</title>
+<title>PerformFootball Pro v8.0</title>
 
 <!-- Fonts: Display (Space Grotesk) + Mono (JetBrains Mono) + Body (Manrope) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -575,7 +575,8 @@ const DEFAULT_SETTINGS = {
   refreshInterval: 5,         // minutos (0 = manual)
   notifEnabled: true,
   notifSound: false,
-  notifGroup: true
+  notifGroup: true,
+  language: ''       // '' = auto-detect | 'pt-BR' | 'pt-PT' | 'en'
 };
 
 // Paleta de cores principais disponíveis
@@ -602,6 +603,308 @@ function saveSettings(s) {
 function getTeamName() {
   return getSettings().teamName || TEAM_NAME;
 }
+
+// ═══════════════════════════════════════════════════════════════
+// I18N — INTERNACIONALIZAÇÃO (pt-BR | pt-PT | en)
+// ═══════════════════════════════════════════════════════════════
+
+/** Devolve o código de idioma activo. */
+function getActiveLang() {
+  const s = getSettings();
+  if (s.language && s.language !== '') return s.language;
+  const nav = (navigator.language || 'pt-BR').toLowerCase();
+  if (nav.startsWith('pt-pt') || nav.startsWith('pt-ao') || nav.startsWith('pt-mz')) return 'pt-PT';
+  if (nav.startsWith('en'))  return 'en';
+  return 'pt-BR';
+}
+
+/** Dicionário de strings da UI para os 3 idiomas. */
+const UI_LANG = {
+  'pt-BR': {
+    nav: {
+      overview: 'Visão Geral', athletes: 'Atletas', training: 'Questionários',
+      gps: 'GPS', anthro: 'Antropometria', injuries: 'Lesões',
+      forms: 'Formulários', calendar: 'Calendário', settings: 'Configurações'
+    },
+    overview: {
+      available: 'Disponível', conditioned: 'Condicionado', injured: 'Lesionado'
+    },
+    athleteCard: {
+      highRisk: 'Alto risco', medRisk: 'Médio risco', lowRisk: 'Baixo risco'
+    },
+    acwr: {
+      noData: 'Sem dados', underload: 'Subcarga', ideal: 'Ideal',
+      attention: 'Atenção', highRisk: 'Risco alto'
+    },
+    settings: {
+      title: 'Preferências', appearance: 'Aparência',
+      dark: 'Escuro', light: 'Claro', auto: 'Auto',
+      language: 'Idioma', languageHint: 'Idioma da interface e dos formulários',
+      savedLocally: 'As configurações são guardadas neste navegador.'
+    }
+  },
+  'pt-PT': {
+    nav: {
+      overview: 'Visão Geral', athletes: 'Atletas', training: 'Questionários',
+      gps: 'GPS', anthro: 'Antropometria', injuries: 'Lesões',
+      forms: 'Formulários', calendar: 'Calendário', settings: 'Definições'
+    },
+    overview: {
+      available: 'Disponível', conditioned: 'Condicionado', injured: 'Lesionado'
+    },
+    athleteCard: {
+      highRisk: 'Alto risco', medRisk: 'Médio risco', lowRisk: 'Baixo risco'
+    },
+    acwr: {
+      noData: 'Sem dados', underload: 'Subcarga', ideal: 'Ideal',
+      attention: 'Atenção', highRisk: 'Risco alto'
+    },
+    settings: {
+      title: 'Preferências', appearance: 'Aparência',
+      dark: 'Escuro', light: 'Claro', auto: 'Auto',
+      language: 'Idioma', languageHint: 'Idioma da interface e dos formulários',
+      savedLocally: 'As definições são guardadas neste navegador.'
+    }
+  },
+  'en': {
+    nav: {
+      overview: 'Overview', athletes: 'Players', training: 'Questionnaires',
+      gps: 'GPS', anthro: 'Anthropometry', injuries: 'Injuries',
+      forms: 'Forms', calendar: 'Calendar', settings: 'Settings'
+    },
+    overview: {
+      available: 'Available', conditioned: 'Conditioned', injured: 'Injured'
+    },
+    athleteCard: {
+      highRisk: 'High risk', medRisk: 'Medium risk', lowRisk: 'Low risk'
+    },
+    acwr: {
+      noData: 'No data', underload: 'Underload', ideal: 'Ideal',
+      attention: 'Caution', highRisk: 'High risk'
+    },
+    settings: {
+      title: 'Preferences', appearance: 'Appearance',
+      dark: 'Dark', light: 'Light', auto: 'Auto',
+      language: 'Language', languageHint: 'UI language and form field detection',
+      savedLocally: 'Settings are saved in this browser.'
+    }
+  }
+};
+
+/**
+ * Traduzir string da UI.
+ * @param {string} path - dotted path, e.g. 'nav.overview', 'acwr.ideal'
+ * @param {...string} args - substituições posicionais (%s)
+ */
+function tUI(path, ...args) {
+  const lang = getActiveLang();
+  const dict = UI_LANG[lang] || UI_LANG['pt-BR'];
+  const parts = path.split('.');
+  let val = dict;
+  for (const p of parts) {
+    val = val ? val[p] : undefined;
+    if (val === undefined) {
+      // fallback to pt-BR
+      let fb = UI_LANG['pt-BR'];
+      for (const p2 of parts) { fb = fb ? fb[p2] : undefined; }
+      return (typeof fb === 'string' ? fb : path);
+    }
+  }
+  if (typeof val !== 'string') return path;
+  return args.reduce((s, a) => s.replace('%s', a), val);
+}
+
+// ─── COLUMN_MAP — mapeamento de campo → palavras-chave multi-idioma ──────────
+const COLUMN_MAP = {
+  // Cadastro / Registration
+  fullName:       ['nome completo', 'full name', 'nome'],
+  nickname:       ['apelido', 'nickname', 'alcunha'],
+  birthDate:      ['data de nascimento', 'date of birth', 'nascimento'],
+  nationality:    ['nacionalidade', 'nationality'],
+  primaryPos:     ['posição principal', 'primary position', 'posicao principal'],
+  secondaryPos:   ['posição secundária', 'secondary position'],
+  dominantFoot:   ['pé dominante', 'dominant foot', 'pe dominante'],
+  jerseyNumber:   ['número da camisa', 'jersey number', 'numero da camisa', 'número da camisola'],
+  status:         ['status', 'estado'],
+  contractStart:  ['data de contratação', 'contract start date'],
+  contractEnd:    ['fim de contrato', 'contract end date'],
+  prevClub:       ['clube anterior', 'previous club'],
+  trainingCountry:['país de formação', 'country of training'],
+  height:         ['altura (cm)', 'height (cm)', 'altura'],
+  weight:         ['peso (kg)', 'weight (kg)', 'peso'],
+  phone:          ['telefone', 'phone'],
+  notes:          ['observações', 'notes', 'observacoes'],
+  athleteId:      ['id_atleta', 'id atleta'],
+  email:          ['endereço de e-mail', 'email address', 'endereco de e-mail'],
+  timestamp:      ['carimbo de data/hora', 'timestamp'],
+
+  // Bem-estar / Wellness
+  athleteName:    ['qual é o seu nome?', 'what is your name?', 'qual e o seu nome?'],
+  sleepQuality:   ['qualidade do sono (1=péssima, 5=excelente)', 'sleep quality (1=very poor, 5=excellent)', 'qualidade do sono'],
+  sleepHours:     ['horas de sono', 'hours of sleep'],
+  fatigue:        ['fadiga (1=muito cansado, 5=bem descansado)', 'fatigue (1=very tired, 5=well rested)', 'fadiga'],
+  mood:           ['humor (1=muito ruim, 5=muito bom)', 'humor (1=muito mau, 5=muito bom)', 'mood (1=very bad, 5=very good)', 'humor'],
+  motivation:     ['motivação (1=sem motivação, 5=muito motivado)', 'motivation (1=not motivated, 5=very motivated)', 'motivacao'],
+
+  // Pós-treino / Post-training
+  pse:            ['pse - percepção subjetiva de esforço (1=muito fácil, 10=máximo)',
+                   'rpe - rate of perceived exertion (1=very easy, 10=maximum)',
+                   'pse', 'rpe'],
+  postWeight:     ['peso pós-treino (kg)', 'post-training weight (kg)', 'peso pos-treino'],
+  duration:       ['duração (minutos)', 'duration (minutes)', 'duracao (minutos)', 'duração'],
+
+  // Antropometria / Anthropometry
+  assessmentDate: ['data da avaliação', 'assessment date', 'data da avaliacao'],
+  anthroName:     ['nome do atleta', 'player name'],
+  bodyFat:        ['percentual de gordura corporal (%)', 'body fat percentage (%)', 'percentagem de gordura corporal (%)'],
+  muscleMass:     ['massa muscular (kg)', 'lean mass (kg)'],
+  waist:          ['cintura (cm)', 'waist (cm)'],
+  hip:            ['quadril (cm)', 'hip (cm)', 'anca (cm)'],
+  thigh:          ['coxa (cm)', 'thigh (cm)'],
+  calf:           ['panturrilha (cm)', 'calf (cm)', 'gémeo (cm)'],
+  armRelax:       ['braço relaxado (cm)', 'relaxed arm (cm)'],
+
+  // Lesões / Injuries
+  injuryRegDate:  ['data do registro', 'data do registo', 'registration date'],
+  injuryName:     ['nome do atleta', 'player name'],
+  injuryRegType:  ['tipo de registro', 'tipo de registo', 'record type'],
+  injuryDate:     ['data da lesão/ocorrência', 'injury/incident date'],
+  injuryType:     ['tipo de lesão', 'injury type'],
+  injuryLocation: ['localização da lesão', 'injury location'],
+  severity:       ['gravidade estimada', 'estimated severity'],
+  mechanism:      ['mecanismo da lesão', 'injury mechanism'],
+  diagnosis:      ['diagnóstico detalhado', 'detailed diagnosis'],
+  treatment:      ['tratamento prescrito', 'prescribed treatment'],
+  returnDate:     ['previsão de retorno', 'previsão de regresso', 'expected return date'],
+  injuryStatus:   ['status atual', 'estado atual', 'current status'],
+};
+
+/** Normaliza string para comparação: minúsculas, sem acentos, trim */
+function _norm(s) {
+  return (s || '').toString().toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+}
+
+/**
+ * Encontra o índice de uma coluna nos headers pelo fieldId do COLUMN_MAP.
+ * Primeiro tenta match exacto, depois parcial.
+ * @returns {number} índice (0-based) ou -1
+ */
+function findCol(headers, fieldId) {
+  const keywords = COLUMN_MAP[fieldId];
+  if (!keywords || !headers) return -1;
+  const normed = headers.map(_norm);
+  // 1. Match exacto
+  for (const kw of keywords) {
+    const idx = normed.indexOf(_norm(kw));
+    if (idx !== -1) return idx;
+  }
+  // 2. Match parcial (a coluna contém a keyword ou vice-versa)
+  for (const kw of keywords) {
+    const nkw = _norm(kw);
+    const idx = normed.findIndex(h => h.includes(nkw) || nkw.includes(h));
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+/**
+ * Lê o valor de uma linha pelo fieldId.
+ * @returns {string} valor ou ''
+ */
+function getVal(row, headers, fieldId) {
+  const idx = findCol(headers, fieldId);
+  return idx !== -1 ? (row[idx] ?? '') : '';
+}
+
+// ─── VALUE_NORMALIZE — mapeia valores traduzidos para códigos internos ────────
+const VALUE_NORMALIZE = {
+  // Posições → código interno
+  'goleiro': 'GK', 'goalkeeper': 'GK', 'guarda-redes': 'GK',
+  'lateral direito': 'RB', 'right back': 'RB',
+  'lateral esquerdo': 'LB', 'left back': 'LB',
+  'zagueiro': 'CB', 'centre back': 'CB', 'defesa central': 'CB',
+  'volante': 'CDM', 'defensive mid': 'CDM', 'médio defensivo': 'CDM',
+  'meia': 'CM', 'midfielder': 'CM', 'médio': 'CM',
+  'extremo': 'EXT', 'winger': 'EXT',
+  'ponta d.': 'RW', 'right winger': 'RW',
+  'ponta e.': 'LW', 'left winger': 'LW',
+  'atacante': 'ST', 'forward': 'ST', 'avançado': 'ST',
+  'meia-atacante': 'CAM',
+
+  // Status → interno
+  'ativo': 'ACTIVE', 'active': 'ACTIVE',
+  'lesionado': 'INJURED', 'injured': 'INJURED',
+  'emprestado': 'LOAN', 'on loan': 'LOAN',
+  'inativo': 'INACTIVE', 'inactive': 'INACTIVE',
+
+  // Pé dominante
+  'direito': 'right', 'right': 'right',
+  'esquerdo': 'left', 'left': 'left',
+  'ambos': 'both', 'both': 'both',
+
+  // Gravidade lesão
+  'leve (1-3 dias)': 'MILD',    'minor (1-3 days)': 'MILD',    'ligeira (1-3 dias)': 'MILD',
+  'moderada (4-7 dias)': 'MODERATE', 'moderate (4-7 days)': 'MODERATE',
+  'grave (8-28 dias)': 'SEVERE', 'severe (8-28 days)': 'SEVERE',
+  'muito grave (>28 dias)': 'VERY_SEVERE', 'very severe (>28 days)': 'VERY_SEVERE',
+};
+
+/** Normaliza um valor bruto para código interno usando VALUE_NORMALIZE. */
+function normalizeValue(raw) {
+  if (!raw) return raw;
+  const key = _norm(raw);
+  return VALUE_NORMALIZE[key] ?? raw;
+}
+
+// ─── detectarAbas — descobre os nomes reais das abas na planilha ──────────────
+const TAB_KEYWORDS = {
+  cadastro:   ['cadastro', 'registo', 'registration', 'player', 'atleta'],
+  preTreino:  ['pretreino', 'pre-treino', 'pre_treino', 'pretraining', 'pre-training', '2a'],
+  posTreino:  ['postreino', 'pos-treino', 'pos_treino', 'posttraining', 'post-training', '3'],
+  gps:        ['gps', '5_gps'],
+  antro:      ['antro', 'antropometria', 'anthropometry', '4_'],
+  lesoes:     ['lesoes', 'lesão', 'lesao', 'injuries', 'injury', '5_le'],
+};
+
+function findTabByKeywords(titles, keywords) {
+  const normed = titles.map(t => ({ original: t, norm: _norm(t) }));
+  for (const kw of keywords) {
+    const nkw = _norm(kw);
+    const found = normed.find(t => t.norm.includes(nkw) || nkw.includes(t.norm));
+    if (found) return found.original;
+  }
+  return null;
+}
+
+/**
+ * Chama a API de metadados do Google Sheets para listar os títulos das abas.
+ * Devolve um objecto { cadastro, preTreino, posTreino, gps, antro, lesoes }
+ * com os nomes reais, ou null em caso de erro.
+ */
+async function detectarAbas(spreadsheetId, apiKey) {
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?key=${apiKey}&fields=sheets.properties.title`;
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    const titles = (json.sheets || []).map(s => s.properties.title);
+    if (!titles.length) return null;
+    return {
+      cadastro:   findTabByKeywords(titles, TAB_KEYWORDS.cadastro)   || null,
+      preTreino:  findTabByKeywords(titles, TAB_KEYWORDS.preTreino)   || null,
+      posTreino:  findTabByKeywords(titles, TAB_KEYWORDS.posTreino)   || null,
+      gps:        findTabByKeywords(titles, TAB_KEYWORDS.gps)         || null,
+      antro:      findTabByKeywords(titles, TAB_KEYWORDS.antro)       || null,
+      lesoes:     findTabByKeywords(titles, TAB_KEYWORDS.lesoes)      || null,
+    };
+  } catch (e) {
+    console.warn('detectarAbas failed:', e.message);
+    return null;
+  }
+}
+
+
 
 // Clareia/escurece uma cor hex por uma percentagem (-100 a 100)
 function shadeColor(hex, percent) {
@@ -693,11 +996,29 @@ const ATHLETES_SEED = [
   { name: "Igor Alves",        nick: "Igor",     pos: "CDM", num: 15, age: 25, foot: "right", h: 184, w: 78 }
 ];
 
-const POS_GROUPS = {
+const POS_GROUPS_PT_BR = {
   GK: "Goleiro", CB: "Zagueiro", RB: "Lateral D.", LB: "Lateral E.",
   CDM: "Volante", CM: "Meio-Campo", CAM: "Meia-Atacante",
-  RW: "Ponta D.", LW: "Ponta E.", ST: "Atacante"
+  EXT: "Extremo", RW: "Ponta D.", LW: "Ponta E.", ST: "Atacante"
 };
+const POS_GROUPS_PT_PT = {
+  GK: "Guarda-redes", CB: "Defesa Central", RB: "Lateral D.", LB: "Lateral E.",
+  CDM: "Méd. Def.", CM: "Médio", CAM: "Médio Ofensivo",
+  EXT: "Extremo", RW: "Ponta D.", LW: "Ponta E.", ST: "Avançado"
+};
+const POS_GROUPS_EN = {
+  GK: "Goalkeeper", CB: "Centre Back", RB: "Right Back", LB: "Left Back",
+  CDM: "Def. Mid", CM: "Midfielder", CAM: "Att. Mid",
+  EXT: "Winger", RW: "Right Wing", LW: "Left Wing", ST: "Forward"
+};
+function getPosGroups() {
+  const lang = getActiveLang();
+  if (lang === 'pt-PT') return POS_GROUPS_PT_PT;
+  if (lang === 'en')    return POS_GROUPS_EN;
+  return POS_GROUPS_PT_BR;
+}
+// Backwards-compat alias (used in multiple places)
+const POS_GROUPS = POS_GROUPS_PT_BR;
 
 // Helper: deterministic random based on seed
 function seedRandom(seed) {
@@ -1239,11 +1560,11 @@ function calcularACWR(athleteId, gpsData, trainingData) {
 
 // Classifica zona de risco do ACWR (sweet spot 0.8–1.3)
 function zonaACWR(acwr) {
-  if (!acwr || acwr === 0) return { label: 'Sem dados', cor: 'var(--text-tertiary)', nivel: 'none' };
-  if (acwr < 0.8)  return { label: 'Subcarga',   cor: 'var(--accent-secondary)', nivel: 'baixo' };
-  if (acwr <= 1.3) return { label: 'Ideal',      cor: 'var(--accent-success)',   nivel: 'baixo' };
-  if (acwr <= 1.5) return { label: 'Atenção',    cor: 'var(--accent-warning)',   nivel: 'medio' };
-  return { label: 'Risco alto', cor: 'var(--accent-danger)', nivel: 'alto' };
+  if (!acwr || acwr === 0) return { label: tUI('acwr.noData'),    cor: 'var(--text-tertiary)',    nivel: 'none' };
+  if (acwr < 0.8)  return  { label: tUI('acwr.underload'),       cor: 'var(--accent-secondary)', nivel: 'baixo' };
+  if (acwr <= 1.3) return  { label: tUI('acwr.ideal'),           cor: 'var(--accent-success)',   nivel: 'baixo' };
+  if (acwr <= 1.5) return  { label: tUI('acwr.attention'),       cor: 'var(--accent-warning)',   nivel: 'medio' };
+  return                   { label: tUI('acwr.highRisk'),        cor: 'var(--accent-danger)',    nivel: 'alto' };
 }
 
 // Estado diário consolidado de um atleta (bem-estar/PSE/dores do dia + risco)
@@ -1282,15 +1603,15 @@ function estadoDiarioAtleta(athlete, trainingData, gpsData, injuries) {
   if (lesoesAtivas.length > 0) pontosRisco += 3;
 
   let risco;
-  if (pontosRisco >= 4)      risco = { nivel: 'alto',  cor: 'var(--accent-danger)',  label: 'Alto risco' };
-  else if (pontosRisco >= 2) risco = { nivel: 'medio', cor: 'var(--accent-warning)', label: 'Médio risco' };
-  else                       risco = { nivel: 'baixo', cor: 'var(--accent-success)', label: 'Baixo risco' };
+  if (pontosRisco >= 4)      risco = { nivel: 'alto',  cor: 'var(--accent-danger)',  label: tUI('athleteCard.highRisk') };
+  else if (pontosRisco >= 2) risco = { nivel: 'medio', cor: 'var(--accent-warning)', label: tUI('athleteCard.medRisk')  };
+  else                       risco = { nivel: 'baixo', cor: 'var(--accent-success)', label: tUI('athleteCard.lowRisk')  };
 
   // Estado de disponibilidade derivado
   let disponibilidade;
-  if (lesoesAtivas.length > 0) disponibilidade = { status: 'Lesionado',   cor: 'var(--accent-danger)',  dot: '🔴' };
-  else if (risco.nivel === 'alto' || temDores) disponibilidade = { status: 'Condicionado', cor: 'var(--accent-warning)', dot: '🟡' };
-  else disponibilidade = { status: 'Disponível', cor: 'var(--accent-success)', dot: '🟢' };
+  if (lesoesAtivas.length > 0) disponibilidade = { status: tUI('overview.injured'),    cor: 'var(--accent-danger)',  dot: '🔴' };
+  else if (risco.nivel === 'alto' || temDores)   disponibilidade = { status: tUI('overview.conditioned'), cor: 'var(--accent-warning)', dot: '🟡' };
+  else                                           disponibilidade = { status: tUI('overview.available'),   cor: 'var(--accent-success)', dot: '🟢' };
 
   return {
     bemEstar, pse, temDores, doresRegioes,
@@ -1385,16 +1706,20 @@ function atualizarSnapshotNotif(data) {
 // ═══════════════════════════════════════════════════════════════
 // BUSCA GLOBAL — atletas + páginas
 // ═══════════════════════════════════════════════════════════════
-const SEARCHABLE_PAGES = [
-  { id:'overview',  label:'Visão Geral',     icon:'LayoutDashboard', keywords:['dashboard','inicio','home','visao geral','overview'] },
-  { id:'athletes',  label:'Atletas',         icon:'Users',           keywords:['atletas','plantel','elenco','jogadores'] },
-  { id:'training',  label:'Questionários',   icon:'Activity',        keywords:['questionarios','treinos','carga','pse','bem-estar','wellness','pre-treino','pos-treino','interna'] },
-  { id:'gps',       label:'GPS',             icon:'MapPin',          keywords:['gps','distancia','velocidade','sprint','statsports'] },
-  { id:'anthro',    label:'Antropometria',   icon:'Ruler',           keywords:['antropometria','peso','gordura','massa','dobras','composicao'] },
-  { id:'injuries',  label:'Lesões',          icon:'Heart',           keywords:['lesoes','lesao','medico','departamento medico','recuperacao'] },
-  { id:'forms',     label:'Formulários',     icon:'ClipboardList',   keywords:['formularios','forms','registo','registro','relatorios'] },
-  { id:'calendar',  label:'Calendário',      icon:'Calendar',        keywords:['calendario','agenda','sessoes','datas'] }
-];
+function getSearchablePages() {
+  return [
+    { id:'overview',  label: tUI('nav.overview'),  icon:'LayoutDashboard', keywords:['dashboard','inicio','home','visao geral','overview'] },
+    { id:'athletes',  label: tUI('nav.athletes'),   icon:'Users',           keywords:['atletas','players','plantel','elenco','jogadores'] },
+    { id:'training',  label: tUI('nav.training'),   icon:'Activity',        keywords:['questionarios','questionnaires','treinos','carga','pse','rpe','bem-estar','wellness'] },
+    { id:'gps',       label: tUI('nav.gps'),        icon:'MapPin',          keywords:['gps','distancia','velocidade','sprint','statsports'] },
+    { id:'anthro',    label: tUI('nav.anthro'),     icon:'Ruler',           keywords:['antropometria','anthropometry','peso','gordura','massa','dobras','composicao'] },
+    { id:'injuries',  label: tUI('nav.injuries'),   icon:'Heart',           keywords:['lesoes','injuries','lesao','medico','departamento medico','recuperacao'] },
+    { id:'forms',     label: tUI('nav.forms'),      icon:'ClipboardList',   keywords:['formularios','forms','registo','registro','relatorios'] },
+    { id:'calendar',  label: tUI('nav.calendar'),   icon:'Calendar',        keywords:['calendario','calendar','agenda','sessoes','datas'] }
+  ];
+}
+// Backwards-compat: static alias (used in buscarGlobal and renders)
+const SEARCHABLE_PAGES = getSearchablePages();
 
 // Remove acentos para busca tolerante
 function semAcentos(s) {
@@ -1413,7 +1738,7 @@ function buscarGlobal(query, athletes) {
         || semAcentos(a.position).includes(q);
   }).slice(0, 6);
 
-  const paginasEncontradas = SEARCHABLE_PAGES.filter(p => {
+  const paginasEncontradas = getSearchablePages().filter(p => {
     return semAcentos(p.label).includes(q)
         || p.keywords.some(k => semAcentos(k).includes(q));
   }).slice(0, 5);
@@ -1421,71 +1746,76 @@ function buscarGlobal(query, athletes) {
   return { athletes: atletasEncontrados, pages: paginasEncontradas };
 }
 
-// ── Parse athletes from 1_Cadastro_Atleta ─────────────────────
+// ── Parse athletes from 1_Cadastro_Atleta (i18n-aware) ────────
 function parseAthletes(rows) {
-  const objs = rowsToObjects(rows);
-  const POS_MAP = {
-    'Goleiro': 'GK', 'Lateral Direito': 'RB', 'Lateral Esquerdo': 'LB',
-    'Zagueiro': 'CB', 'Volante': 'CDM', 'Meia': 'CM',
-    'Extremo': 'EXT', 'Atacante': 'ST'
-  };
-  const POS_LABELS = {
-    GK:'Goleiro', CB:'Zagueiro', RB:'Lateral D.', LB:'Lateral E.',
-    CDM:'Volante', CM:'Meio-Campo', CAM:'Meia-Atacante',
-    EXT:'Extremo', RW:'Ponta D.', LW:'Ponta E.', ST:'Atacante'
-  };
-  return objs
-    .filter(r => r['Nome completo'] || r['Apelido'])
+  if (!rows || rows.length < 2) return [];
+  const headers = rows[0];
+  const dataRows = rows.slice(1);
+  const posGroups = getPosGroups();
+
+  return dataRows
+    .filter(r => getVal(r, headers, 'fullName') || getVal(r, headers, 'nickname'))
     .map((r, i) => {
-      const pos = POS_MAP[r['Posição principal']] || 'CM';
-      const h = parseFloat(r['Altura (cm)']) || 175;
-      const w = parseFloat(r['Peso (kg)']) || 75;
-      const idRaw = r['ID_Atleta'] || r['ID Atleta'] || '';
+      const posRaw = getVal(r, headers, 'primaryPos');
+      const posCode = normalizeValue(posRaw);
+      // posCode may be 'GK','RB'... (from VALUE_NORMALIZE) or the raw string
+      const pos = posCode && posCode.length <= 4 && posCode === posCode.toUpperCase() ? posCode : 'CM';
+      const h = parseFloat(getVal(r, headers, 'height')) || 175;
+      const w = parseFloat(getVal(r, headers, 'weight')) || 75;
+      const idRaw = getVal(r, headers, 'athleteId');
       const id = idRaw || `ATL${String(i+1).padStart(3,'0')}`;
-      const birthStr = normalizeDateStr(r['Data de nascimento']);
+      const birthStr = normalizeDateStr(getVal(r, headers, 'birthDate'));
       const age = birthStr ? Math.floor((Date.now() - new Date(birthStr + 'T12:00:00')) / 31557600000) : null;
+      const footRaw = normalizeValue(getVal(r, headers, 'dominantFoot'));
+      const statusRaw = normalizeValue(getVal(r, headers, 'status'));
+      const fullName = getVal(r, headers, 'fullName');
+      const nick = getVal(r, headers, 'nickname');
       return {
         id,
-        name: r['Nome completo'] || r['Apelido'] || `Atleta ${i+1}`,
-        nick: r['Apelido'] || r['Nome completo']?.split(' ')[0] || `ATL${i+1}`,
-        number: parseInt(r['Número da camisa']) || (i+1),
+        name: fullName || nick || `Atleta ${i+1}`,
+        nick: nick || fullName?.split(' ')[0] || `ATL${i+1}`,
+        number: parseInt(getVal(r, headers, 'jerseyNumber')) || (i+1),
         position: pos,
-        positionLabel: POS_LABELS[pos] || pos,
-        age: age,
+        positionLabel: posGroups[pos] || pos,
+        age,
         birthDate: birthStr,
-        foot: r['Pé dominante'] === 'Esquerdo' ? 'left' : 'right',
+        foot: footRaw === 'left' ? 'left' : 'right',
         height: h,
         weight: w,
         bmi: +(w / Math.pow(h/100, 2)).toFixed(1),
-        status: r['Status'] || 'Ativo',
-        nationality: r['Nacionalidade'] || 'Brasileira',
-        contractEnd: r['Fim de contrato'] || '',
-        phone: r['Telefone'] || '',
-        avatar: (r['Apelido'] || r['Nome completo'] || 'AT').substring(0,2).toUpperCase(),
-        joinedAt: r['Data de contratação'] || '',
-        email: r['Endereço de e-mail'] || ''
+        status: statusRaw === 'ACTIVE' ? 'Ativo' : statusRaw === 'INJURED' ? 'Lesionado' :
+                statusRaw === 'LOAN'   ? 'Emprestado' : statusRaw === 'INACTIVE' ? 'Inativo' :
+                getVal(r, headers, 'status') || 'Ativo',
+        nationality: getVal(r, headers, 'nationality') || 'Brasileira',
+        contractEnd:  getVal(r, headers, 'contractEnd')  || '',
+        phone:        getVal(r, headers, 'phone')        || '',
+        avatar: (nick || fullName || 'AT').substring(0,2).toUpperCase(),
+        joinedAt: getVal(r, headers, 'contractStart') || '',
+        email:    getVal(r, headers, 'email')         || ''
       };
     });
 }
 
-// ── Parse pre-training (wellness) from 2A_PreTreino_Atleta ─────
+// ── Parse pre-training (wellness) from 2A_PreTreino_Atleta (i18n-aware) ───
 function parseWellness(rows, athletes) {
-  const objs = rowsToObjects(rows);
   const byName = {};
   athletes.forEach(a => {
     if (a.nick) byName[a.nick] = a;
     if (a.name) byName[a.name] = a;
   });
 
-  return objs.map(r => {
-    const name   = r['Qual é o seu nome?'] || '';
+  if (!rows || rows.length < 2) return [];
+  const headers = rows[0];
+  return rows.slice(1).map(r => {
+    const name   = getVal(r, headers, 'athleteName') || '';
     const ath    = byName[name] || null;
-    const sono   = parseInt(r['Qualidade do sono (1=Péssima, 5=Excelente)'])     || 3;
-    const fadiga = parseInt(r['Fadiga (1=Muito cansado, 5=Bem descansado)'])      || 3;
-    const humor  = parseInt(r['Humor (1=Muito ruim, 5=Muito bom)'])               || 3;
-    const motiv  = parseInt(r['Motivação (1=Sem motivação, 5=Muito motivado)'])   || 3;
+    const sono   = parseInt(getVal(r, headers, 'sleepQuality'))  || 3;
+    const fadiga = parseInt(getVal(r, headers, 'fatigue'))       || 3;
+    const humor  = parseInt(getVal(r, headers, 'mood'))          || 3;
+    const motiv  = parseInt(getVal(r, headers, 'motivation'))    || 3;
     const wellness = +((sono + fadiga + humor + motiv) / 4).toFixed(1);
-    const date   = normalizeDateStr(r['Carimbo de data/hora'] || r['Timestamp']);
+    const tsRaw  = getVal(r, headers, 'timestamp');
+    const date   = normalizeDateStr(tsRaw);
     return {
       athleteId:   ath?.id   || '',
       athleteName: ath?.name || name,
@@ -1496,26 +1826,25 @@ function parseWellness(rows, athletes) {
       sono, fadiga, humor, stress: 3, dorMuscular: 3,
       wellness, painRegions: [], type: 'pre'
     };
-  }).filter(r => r.athleteId); // ignorar linhas sem atleta reconhecido
+  }).filter(r => r.athleteId);
 }
 
-// ── Parse post-training from 3_PosTreino_Atleta ───────────────
+// ── Parse post-training from 3_PosTreino_Atleta (i18n-aware) ──
 function parsePostTraining(rows, athletes) {
-  const objs = rowsToObjects(rows);
+  if (!rows || rows.length < 2) return [];
+  const headers = rows[0];
   const byName = {};
   athletes.forEach(a => {
     if (a.nick) byName[a.nick] = a;
     if (a.name) byName[a.name] = a;
   });
 
-
-  return objs.map(r => {
-    const name     = r['Qual é o seu nome?'] || '';
+  return rows.slice(1).map(r => {
+    const name     = getVal(r, headers, 'athleteName') || '';
     const ath      = byName[name] || null;
-    const pse      = parseInt(r['PSE - Percepção Subjetiva de Esforço (1=Muito fácil, 10=Máximo)']) || 5;
-    // Duração: campo opcional no form — usa 90 min como padrão se ausente
-    const duration = parseInt(r['Duração (minutos)'] || r['Duracao (minutos)'] || r['Duração']) || 90;
-    const date     = normalizeDateStr(r['Carimbo de data/hora'] || r['Timestamp']);
+    const pse      = parseInt(getVal(r, headers, 'pse')) || 5;
+    const duration = parseInt(getVal(r, headers, 'duration')) || 90;
+    const date     = normalizeDateStr(getVal(r, headers, 'timestamp'));
     return {
       athleteId:    ath?.id       || '',
       athleteName:  ath?.name     || name,
@@ -1525,7 +1854,7 @@ function parsePostTraining(rows, athletes) {
       dateObj:      toDateObj(date),
       pse, duration,
       internalLoad: pse * duration,
-      peso:         parseFloat(r['Peso pós-treino (kg)']) || 0,
+      peso:         parseFloat(getVal(r, headers, 'postWeight')) || 0,
       type:         'Treino',
       isMatchDay:   false
     };
@@ -1590,21 +1919,23 @@ function parseGPS(rows, athletes) {
     });
 }
 
-// ── Parse anthropometry from 4_Antropometria ─────────────────
+// ── Parse anthropometry from 4_Antropometria (i18n-aware) ─────
 function parseAnthro(rows, athletes) {
-  const objs = rowsToObjects(rows);
+  if (!rows || rows.length < 2) return [];
+  const headers = rows[0];
   const byName = {};
   athletes.forEach(a => {
     if (a.nick) byName[a.nick] = a;
     if (a.name) byName[a.name] = a;
   });
-  return objs.map(r => {
-    const name = r['Nome do atleta'] || '';
+  return rows.slice(1).map(r => {
+    const name = getVal(r, headers, 'anthroName') || '';
     const ath  = byName[name] || null;
-    const w  = parseFloat(r['Peso (kg)'])                        || 0;
-    const h  = parseFloat(r['Altura (cm)'])                      || 0;
-    const bf = parseFloat(r['Percentual de gordura corporal (%)'])|| 0;
-    const date = normalizeDateStr(r['Data da avaliação'] || r['Carimbo de data/hora']);
+    const w  = parseFloat(getVal(r, headers, 'weight'))    || 0;
+    const h  = parseFloat(getVal(r, headers, 'height'))    || 0;
+    const bf = parseFloat(getVal(r, headers, 'bodyFat'))   || 0;
+    const dateRaw = getVal(r, headers, 'assessmentDate') || getVal(r, headers, 'timestamp');
+    const date = normalizeDateStr(dateRaw);
     return {
       athleteId:   ath?.id || '',
       athleteName: ath?.name || name,
@@ -1612,38 +1943,42 @@ function parseAnthro(rows, athletes) {
       date,
       dateObj:     toDateObj(date),
       weight: w, height: h, bodyFat: bf,
-      muscleMass:  parseFloat(r['Massa muscular (kg)']) || 0,
+      muscleMass:  parseFloat(getVal(r, headers, 'muscleMass')) || 0,
       bmi: (w && h) ? +(w / Math.pow(h/100, 2)).toFixed(1) : 0,
-      waist: parseFloat(r['Cintura (cm)'])          || 0,
-      hip:   parseFloat(r['Quadril (cm)'])          || 0,
-      thigh: parseFloat(r['Coxa (cm)'])             || 0,
-      calf:  parseFloat(r['Panturrilha (cm)'])      || 0,
-      arm:   parseFloat(r['Braço relaxado (cm)'])   || 0
+      waist: parseFloat(getVal(r, headers, 'waist'))   || 0,
+      hip:   parseFloat(getVal(r, headers, 'hip'))     || 0,
+      thigh: parseFloat(getVal(r, headers, 'thigh'))   || 0,
+      calf:  parseFloat(getVal(r, headers, 'calf'))    || 0,
+      arm:   parseFloat(getVal(r, headers, 'armRelax'))|| 0
     };
   }).filter(r => r.athleteId);
 }
 
 // ── Parse injuries from 5_Lesoes ──────────────────────────────
 function parseInjuries(rows, athletes) {
-  const objs = rowsToObjects(rows);
   const byName = {};
   athletes.forEach(a => {
     if (a.nick) byName[a.nick] = a;
     if (a.name) byName[a.name] = a;
   });
-  const gravMap = { 'Leve (1-3 dias)':'Leve','Moderada (4-7 dias)':'Moderada','Grave (8-28 dias)':'Grave','Muito grave (>28 dias)':'Grave' };
-  return objs.map(r => {
-    const name = r['Nome do atleta'] || '';
+  if (!rows || rows.length < 2) return [];
+  const headers = rows[0];
+  const gravMap = {
+    'MILD': 'Leve', 'MODERATE': 'Moderada', 'SEVERE': 'Grave', 'VERY_SEVERE': 'Grave'
+  };
+  return rows.slice(1).map(r => {
+    const name = getVal(r, headers, 'injuryName') || '';
     const ath  = byName[name] || null;
-    const date       = normalizeDateStr(r['Data do registro'] || r['Carimbo de data/hora']);
-    const injuryDate = normalizeDateStr(r['Data da lesão/ocorrência']);
-    const returnDate = normalizeDateStr(r['Previsão de retorno']);
-    // Dias afastado: da lesão até retorno previsto (ou até hoje se sem previsão)
+    const dateRaw    = getVal(r, headers, 'injuryRegDate') || getVal(r, headers, 'timestamp');
+    const date       = normalizeDateStr(dateRaw);
+    const injuryDate = normalizeDateStr(getVal(r, headers, 'injuryDate'));
+    const returnDate = normalizeDateStr(getVal(r, headers, 'returnDate'));
     let daysOut = 0;
     if (injuryDate) {
       const end = returnDate ? new Date(returnDate) : new Date();
       daysOut = Math.max(0, Math.round((end - new Date(injuryDate)) / 86400000));
     }
+    const sevCode = normalizeValue(getVal(r, headers, 'severity'));
     return {
       athleteId:   ath?.id || '',
       athleteName: ath?.name || name,
@@ -1652,39 +1987,41 @@ function parseInjuries(rows, athletes) {
       dateObj:     toDateObj(date),
       injuryDate,
       returnDate,
-      type:        r['Tipo de lesão'] || 'Muscular',
-      location:    r['Localização da lesão'] || '',
-      severity:    gravMap[r['Gravidade estimada']] || 'Leve',
-      mechanism:   r['Mecanismo da lesão'] || '',
-      diagnosis:   r['Diagnóstico detalhado'] || '',
-      treatment:   r['Tratamento prescrito'] || '',
-      status:      r['Status atual'] || 'Em tratamento',
+      type:      getVal(r, headers, 'injuryType')    || 'Muscular',
+      location:  getVal(r, headers, 'injuryLocation')|| '',
+      severity:  gravMap[sevCode] || sevCode || 'Leve',
+      mechanism: getVal(r, headers, 'mechanism')     || '',
+      diagnosis: getVal(r, headers, 'diagnosis')     || '',
+      treatment: getVal(r, headers, 'treatment')     || '',
+      status:    getVal(r, headers, 'injuryStatus')  || 'Em tratamento',
       daysOut, recoveryDays: daysOut
     };
   }).filter(r => r.athleteId);
 }
 
-// ── Master fetch — loads all sheets ───────────────────────────
+// ── Master fetch — loads all sheets (i18n-aware tab detection) ─
 async function fetchAllData(spreadsheetId, apiKey) {
-  const SHEETS = [
-    '1_Cadastro_Atleta',
-    '2A_PreTreino_Atleta',
-    '3_PosTreino_Atleta',
-    '5_GPS',
-    '4_Antropometria',
-    '5_Lesoes'
-  ];
+  // Detect real tab names from spreadsheet metadata; fall back to pt-BR defaults
+  const abas = await detectarAbas(spreadsheetId, apiKey);
+  const tabCadastro  = (abas && abas.cadastro)  || '1_Cadastro_Atleta';
+  const tabPreTreino = (abas && abas.preTreino)  || '2A_PreTreino_Atleta';
+  const tabPosTreino = (abas && abas.posTreino)  || '3_PosTreino_Atleta';
+  const tabGPS       = (abas && abas.gps)        || '5_GPS';
+  const tabAntro     = (abas && abas.antro)      || '4_Antropometria';
+  const tabLesoes    = (abas && abas.lesoes)      || '5_Lesoes';
 
-  const results = await Promise.allSettled(
+  const SHEETS = [tabCadastro, tabPreTreino, tabPosTreino, tabGPS, tabAntro, tabLesoes];
+
+  const fetchResults = await Promise.allSettled(
     SHEETS.map(s => fetchSheet(spreadsheetId, apiKey, s))
   );
 
-  const [cadRows, preRows, posRows, gpsRows, anthRows, lesRows] = results.map(r =>
+  const [cadRows, preRows, posRows, gpsRows, anthRows, lesRows] = fetchResults.map(r =>
     r.status === 'fulfilled' ? r.value : []
   );
 
   const athletes = parseAthletes(cadRows);
-  if (athletes.length === 0) throw new Error('Nenhum atleta encontrado. Verifique se a aba "1_Cadastro_Atleta" tem dados.');
+  if (athletes.length === 0) throw new Error('Nenhum atleta encontrado. Verifique se a aba de cadastro tem dados.');
 
   const wellness   = parseWellness(preRows, athletes);
   const postTrain  = parsePostTraining(posRows, athletes);
@@ -1944,7 +2281,7 @@ function exportAthleteProfilePDF(athlete, trainingData, gpsData, anthroData, inj
   const topSpeed   = recentGPS.length ? Math.max(...recentGPS.map(g=>g.topSpeed||0)).toFixed(1) : '—';
 
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
-  <title>Relatório — ${athlete.name}</title>
+  <title>PerformFootball Pro v8.0</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family: Arial, sans-serif; color:#111; background:#fff; padding:32px; font-size:13px; }
@@ -2108,7 +2445,7 @@ function exportTeamReportPDF(athletes, trainingData, gpsData, injuries, period =
   };
 
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
-  <title>Relatório Colectivo — ${teamName}</title>
+  <title>PerformFootball Pro v8.0</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family:Arial, sans-serif; color:#111; background:#fff; padding:32px; font-size:13px; }
@@ -2410,7 +2747,7 @@ const LoginScreen = ({ onLogin }) => {
           <span className="display" style={{fontSize:24,letterSpacing:'0.05em'}}>SISTEMABSP</span>
           <span className="badge" style={{background:'rgba(197,255,62,0.1)',color:'var(--accent-primary)',border:'1px solid var(--accent-primary)'}}>PRO</span>
         </div>
-        <div className="mono" style={{fontSize:11,color:'var(--text-tertiary)',textTransform:'uppercase',letterSpacing:'0.15em'}}>v7.5 · {SEASON}</div>
+        <div className="mono" style={{fontSize:11,color:'var(--text-tertiary)',textTransform:'uppercase',letterSpacing:'0.15em'}}>v8.0 · {SEASON}</div>
       </div>
 
       <div style={{position:'relative',zIndex:2,height:'100vh',display:'grid',gridTemplateColumns:'1fr 1fr',alignItems:'center'}}>
@@ -5791,16 +6128,28 @@ const SettingsPage = ({ settings, onChange, dataMode, lastSync, onDisconnect }) 
     <div style={{maxWidth:760, margin:'0 auto'}}>
       <div style={{marginBottom:24}}>
         <div className="mono" style={{fontSize:10, color:'var(--accent-primary)', textTransform:'uppercase', letterSpacing:'0.2em', marginBottom:4}}>◢ Configurações</div>
-        <h2 className="headline" style={{fontSize:24, margin:0, fontWeight:700}}>Preferências</h2>
+        <h2 className="headline" style={{fontSize:24, margin:0, fontWeight:700}}>{tUI('settings.title')}</h2>
       </div>
 
+      {/* IDIOMA */}
+      <Section icon="Globe" title={tUI('settings.language')} subtitle={tUI('settings.languageHint')}>
+        <Row label={tUI('settings.language')}>
+          <div style={{display:'flex', gap:6}}>
+            <button style={segBtn(!settings.language || settings.language==='')}  onClick={() => update({language:''})}>Auto</button>
+            <button style={segBtn(settings.language==='pt-BR')} onClick={() => update({language:'pt-BR'})}>PT-BR</button>
+            <button style={segBtn(settings.language==='pt-PT')} onClick={() => update({language:'pt-PT'})}>PT-PT</button>
+            <button style={segBtn(settings.language==='en')}    onClick={() => update({language:'en'})}>EN</button>
+          </div>
+        </Row>
+      </Section>
+
       {/* APARÊNCIA */}
-      <Section icon="Palette" title="Aparência" subtitle="Tema e cor principal da aplicação">
+      <Section icon="Palette" title={tUI('settings.appearance')} subtitle="Tema e cor principal da aplicação">
         <Row label="Tema" hint="Escuro, claro ou conforme o sistema">
           <div style={{display:'flex', gap:6}}>
-            <button style={segBtn(settings.theme==='dark')}  onClick={() => update({theme:'dark'})}>Escuro</button>
-            <button style={segBtn(settings.theme==='light')} onClick={() => update({theme:'light'})}>Claro</button>
-            <button style={segBtn(settings.theme==='auto')}  onClick={() => update({theme:'auto'})}>Auto</button>
+            <button style={segBtn(settings.theme==='dark')}  onClick={() => update({theme:'dark'})}>{tUI('settings.dark')}</button>
+            <button style={segBtn(settings.theme==='light')} onClick={() => update({theme:'light'})}>{tUI('settings.light')}</button>
+            <button style={segBtn(settings.theme==='auto')}  onClick={() => update({theme:'auto'})}>{tUI('settings.auto')}</button>
           </div>
         </Row>
         <Row label="Cor principal" hint="Aplica-se a botões, gráficos e destaques">
@@ -5891,7 +6240,7 @@ const SettingsPage = ({ settings, onChange, dataMode, lastSync, onDisconnect }) 
       </Section>
 
       <div style={{textAlign:'center', padding:'12px', fontSize:11, color:'var(--text-quaternary)'}} className="mono">
-        As configurações são guardadas neste navegador.
+        {tUI('settings.savedLocally')}
       </div>
     </div>
   );
